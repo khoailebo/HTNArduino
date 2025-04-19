@@ -2,9 +2,15 @@
 #include <MFRC522.h>
 #include "BluetoothSerial.h"
 
+// Cấu hình hệ thống
+#define RFID_PIN_SUPPLY 4
+#define ALCOHOL_PIN_SUPPLY 16
+
 // Cấu hình RFID
 #define SS_PIN 21   // GPIO21
 #define RST_PIN 22  // GPIO22
+
+
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 MFRC522::MIFARE_Key key = {
   .keyByte = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF }
@@ -61,13 +67,21 @@ void communicationTask(void *parameters) {
         } else if (eventName == "GetAlcoholLevel"){
           xTaskCreate(detectAlcoholTask,"detectAlcoholTask",4096,NULL,1,NULL);
         }
+        else if (eventName == "InitialAlcohol"){
+          xTaskCreate(initailAlcoholTask,"initailAlcoholTask",4096,NULL,1,NULL);
+        }
       }
     }
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
   vTaskDelete(NULL);
 }
-
+void initailAlcoholTask(void *parameters){
+  float alcoholLevel = detectAlcohol();
+  String msg = String("InitialAlcohol|");
+  ESP_BT.println(msg + String(alcoholLevel,4));
+  vTaskDelete(NULL);
+}
 void readCardTask(void *parameters) {
   byte data[18];
   byte block = 4;
