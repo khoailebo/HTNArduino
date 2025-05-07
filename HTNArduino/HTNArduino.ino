@@ -3,13 +3,14 @@
 #include "BluetoothSerial.h"
 
 // Cấu hình hệ thống
-#define RFID_PIN_SUPPLY 4
-#define ALCOHOL_PIN_SUPPLY 16
+#define LED_PIN_SUPPLY 15
 
 // Cấu hình RFID
 #define SS_PIN 21   // GPIO21
 #define RST_PIN 22  // GPIO22
 
+
+#define VEHICLE_ID 1
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 MFRC522::MIFARE_Key key = {
@@ -29,6 +30,8 @@ void setup() {
   // Khoi chay bluetooth
   ESP_BT.begin(DeviceName);
   Serial.println("Phát kết nối bluetooth!");
+
+  pinMode(LED_PIN_SUPPLY, OUTPUT);
 
 
   SPI.begin();         // Khởi động SPI
@@ -70,12 +73,38 @@ void communicationTask(void *parameters) {
         else if (eventName == "InitialAlcohol"){
           xTaskCreate(initailAlcoholTask,"initailAlcoholTask",4096,NULL,1,NULL);
         }
+        else if(eventName == "StartEngine"){
+          xTaskCreate(startEngineTask,"start engine task", 4096, NULL, 1, NULL);
+        }
+        else if(eventName == "StopEngine"){
+          xTaskCreate(stopEngineTask, "stop engine task", 4096, NULL, 1, NULL);
+        }
+        else if(eventName == "GetVehicleId"){
+          xTaskCreate(getVehicleId, "Get Vehicle Id", 4096, NULL, 1, NULL);
+        }
       }
     }
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
   vTaskDelete(NULL);
 }
+
+
+void getVehicleId(void *parameter){
+  String msg = String("GetVehicleId|");
+  ESP_BT.println(msg + String(VEHICLE_ID));
+  vTaskDelete(NULL);
+}
+void startEngineTask(void * parameters){
+  digitalWrite(LED_PIN_SUPPLY,HIGH);
+  vTaskDelete(NULL);
+}
+
+void stopEngineTask(void * parameters){
+  digitalWrite(LED_PIN_SUPPLY,LOW);
+  vTaskDelete(NULL);
+}
+
 void initailAlcoholTask(void *parameters){
   float alcoholLevel = detectAlcohol();
   String msg = String("InitialAlcohol|");
@@ -144,8 +173,26 @@ void loop() {
 
   // mfrc522.PICC_HaltA();
   // mfrc522.PCD_StopCrypto1();
+  // Đợi thẻ
+  // if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) return;
 
-  // delay(2000);  // Tránh ghi nhiều lần liên tiếp
+  // // Dữ liệu cần ghi (phải đúng 16 byte)
+  // const char* cardData = "2505050415441503";
+
+  // byte block = 4; // Ghi vào block 4, bạn có thể đổi tuỳ ý
+
+  // bool result = writeRFIDBlockChar(block, cardData);
+  // if (result) {
+  //   Serial.println("✅ Ghi dữ liệu thành công!");
+  // } else {
+  //   Serial.println("❌ Ghi dữ liệu thất bại!");
+  // }
+
+  // // Dừng kết nối thẻ
+  // mfrc522.PICC_HaltA();
+  // mfrc522.PCD_StopCrypto1();
+
+  // delay(2000); // Tránh ghi nhiều lần liên tiếp
 }
 #define RL 10000.0  // 10k ohm
 #define R0 6000.0   // cần đo khi cảm biến ở không khí sạch
@@ -255,3 +302,36 @@ bool readRFIDBlock(byte blockNumber, byte *buffer) {
 
   return true;
 }
+bool writeRFIDBlockChar(byte blockNumber, const char* data) {
+  MFRC522::StatusCode status;
+
+  // Authenticate before writing
+  status = mfrc522.PCD_Authenticate(
+    MFRC522::PICC_CMD_MF_AUTH_KEY_A,
+    blockNumber,
+    &key,
+    &(mfrc522.uid)
+  );
+
+  if (status != MFRC522::STATUS_OK) {
+    Serial.print("Authentication failed: ");
+    Serial.println(mfrc522.GetStatusCodeName(status));
+    return false;
+  }
+
+  // Copy data to 16-byte buffer
+  byte buffer[16];
+  memset(buffer, 0, 16); // Fill with 0s
+  strncpy((char*)buffer, data, 16); // Copy up to 16 chars
+
+  // Write to the block
+  status = mfrc522.MIFARE_Write(blockNumber, buffer, 16);
+  if (status != MFRC522::STATUS_OK) {
+    Serial.print("Write failed: ");
+    Serial.println(mfrc522.GetStatusCodeName(status));
+    return false;
+  }
+
+  return true;
+}
+
